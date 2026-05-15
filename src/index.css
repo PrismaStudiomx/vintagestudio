@@ -1,0 +1,9 @@
+@import "tailwindcss";
+/* Oculta la barra de scroll pero permite deslizar en móviles */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
