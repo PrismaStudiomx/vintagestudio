@@ -10,3 +10,26 @@
 html {
   scroll-behavior: smooth;
 }
+/* 1. Bloqueamos el movimiento lateral en los contenedores principales */
+html, body {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden; /* Esto corta cualquier cosa que se salga por la derecha */
+  position: relative;
+  margin: 0;
+  padding: 0;
+  touch-action: pan-y; /* Esto le dice al celular: 'Solo permite scroll vertical' */
+}
+
+/* 2. Aseguramos que el contenedor de React no se pase de listo */
+#root {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* 3. Evitamos que las animaciones de Framer Motion empujen la pantalla */
+.container-principal {
+  overflow-x: hidden;
+  width: 100%;
+}
