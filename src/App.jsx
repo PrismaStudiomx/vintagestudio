@@ -131,7 +131,12 @@ export default function BarberiaPremium() {
 
   const finalizarCita = async () => {
     if (!reserva.servicio || !reserva.horario || !reserva.barbero) return;
+    
     const fechaFinal = fechaSeleccionada.toISOString().split('T')[0];
+    const opcionesFecha = { weekday: 'long', day: 'numeric', month: 'long' };
+    
+    let fechaLegible = fechaSeleccionada.toLocaleDateString('es-MX', opcionesFecha);
+    fechaLegible = fechaLegible.normalize("NFD").replace(/[\u0300-\u0301]/g, "");
 
     const { error } = await supabase.from('citas').insert([
       { 
@@ -149,10 +154,26 @@ export default function BarberiaPremium() {
     }
 
     const numeroTelefono = "523310942397";
-    const texto = `¡Hola! 👋 Quiero agendar una cita:\n📌 *Servicio:* ${reserva.servicio.nombre}\n🪒 *Barbero:* ${reserva.barbero}\n📅 *Fecha:* ${fechaFinal}\n⏰ *Horario:* ${reserva.horario}`;
-    window.open(`https://wa.me/${numeroTelefono}?text=${encodeURIComponent(texto)}`, '_blank');
-  };
+    
+    // Eliminamos por completo los asteriscos y usamos emojis limpios que actúan como separadores estéticos
+    const textoTicket = 
+`BARBERIA VINTAGE STUDIO
+--------------------------------------
+¡Hola! Me gustaria confirmar mi cita agendada desde el sitio web. Aquí estan los detalles de mi turno:
 
+🔹 SERVICIO: ${reserva.servicio.nombre}
+🔹 BARBERO: ${reserva.barbero}
+🔹 FECHA: ${fechaLegible.toUpperCase()}
+🔹 HORARIO: ${reserva.horario}
+
+--------------------------------------
+✨ Agradecemos su puntualidad. ¡Nos vemos pronto!`;
+
+    // Pasamos el texto por encodeURIComponent para empaquetarlo perfectamente
+    const urlWhatsapp = `https://api.whatsapp.com/send?phone=${numeroTelefono}&text=${encodeURIComponent(textoTicket)}`;
+    
+    window.open(urlWhatsapp, '_blank');
+  };
   // ==========================================
   // VISTA 2: PRISMA DASHBOARD (PANTALLA DE ADMIN)
   // ==========================================
