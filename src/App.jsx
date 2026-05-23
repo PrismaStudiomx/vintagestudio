@@ -17,6 +17,10 @@ export default function BarberiaPremium() {
   const [step, setStep] = useState(1);
   const [reserva, setReserva] = useState({ servicio: null, barbero: null, horario: null });
   const [ocupados, setOcupados] = useState([]);
+  // Agrega estas líneas junto a tus otros estados (useState)
+const [menuBarberoAbierto, setMenuBarberoAbierto] = useState(false);
+const [menuServicioAbierto, setMenuServicioAbierto] = useState(false);
+const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
   
   // ESTADOS DEL PRISMA DASHBOARD
   const [modoAdmin, setModoAdmin] = useState(false);
@@ -24,6 +28,16 @@ export default function BarberiaPremium() {
   const [pinCorrecto, setPinCorrecto] = useState(false);
   const [citasDelDia, setCitasDelDia] = useState([]);
   const [errorPin, setErrorPin] = useState(false);
+  const [barberoLogueado, setBarberoLogueado] = useState(null); // Almacena el nombre del barbero activo
+  // ESTADOS PARA WALK-IN
+  const [mostrarModalWalkIn, setMostrarModalWalkIn] = useState(false);
+  const [triggerRecarga, setTriggerRecarga] = useState(0);
+  const [formWalkIn, setFormWalkIn] = useState({ 
+    cliente: "", 
+    servicio: SERVICIOS[0].nombre, 
+    barbero: BARBEROS[0], 
+    metodoPago: "efectivo" 
+  });
 
   const [fechaSeleccionada, setFechaSeleccionada] = useState(() => {
     const d = new Date();
@@ -101,148 +115,262 @@ export default function BarberiaPremium() {
       }
     };
     obtenerDatos();
-  }, [fechaSeleccionada, reserva.barbero, modoAdmin]);
+  }, [fechaSeleccionada, reserva.barbero, modoAdmin, triggerRecarga]);
 
   const manejarLoginAdmin = (e) => {
-    e.preventDefault();
-    if (pinIngresado === PIN_SEGURIDAD) {
+    e.preventDefault(); // 🔥 Evita que la página se recargue de golpe
+    
+    // Diccionario con PINs de 4 números para respetar el diseño de la pantalla
+    const PINS_ACCESO = {
+      "1234": "admin",        // Entras tú a la caja global
+      "1111": "David",        // Entra David a su sillón
+      "2222": "Jorge",        // Entra Jorge a su sillón
+      "3333": "Francisco"     // Entra Francisco a su sillón
+    };
+
+    const usuarioEncontrado = PINS_ACCESO[pinIngresado];
+
+    if (usuarioEncontrado === "admin") {
       setPinCorrecto(true);
+      setModoAdmin(true);
+      setBarberoLogueado(null);
+      setErrorPin(false);
+    } else if (usuarioEncontrado) {
+      // Si es un barbero, lo logueamos directamente y activamos su vista
+      setBarberoLogueado(usuarioEncontrado);
+      setModoAdmin(false);
       setErrorPin(false);
     } else {
+      // Si el PIN no existe en el diccionario, marca error
       setErrorPin(true);
       setPinIngresado("");
     }
   };
 
-  const calcularIngresosDelDia = () => {
-    const citasFiltradas = citasDelDia.filter(cita => BARBEROS.includes(cita.barbero));
-    return citasFiltradas.reduce((total, cita) => {
-      const servicioEncontrado = SERVICIOS.find(s => s.nombre === cita.servicio);
-      const precioNum = servicioEncontrado ? parseInt(servicioEncontrado.precio.replace('$', '')) : 350;
-      return total + precioNum;
-    }, 0);
+  const registrarWalkIn = async (e) => {
+    e.preventDefault();
+    await supabase.from('citas').insert([{ 
+      fecha: fechaSeleccionada.toISOString().split('T')[0], 
+      horario: new Date().toLocaleTimeString(), 
+      barbero: formWalkIn.barbero, 
+      servicio: formWalkIn.servicio,
+      tipo_cita: 'walk-in',
+      cliente_nombre: formWalkIn.cliente || 'Walk-in',
+      metodo_pago: formWalkIn.metodoPago
+    }]);
+    setMostrarModalWalkIn(false);
+    setTriggerRecarga(prev => prev + 1);
   };
-
-  // 🚀 FUNCIÓN ESTRELLA: GENERADOR DE PDF DE AUDITORÍA
+  // 🔥 CORRECCIÓN: Función faltante para calcular la caja del día
+  const calcularIngresosDelDia = () => {
+    return citasDelDia
+      .filter(cita => cita.metodo_pago && cita.metodo_pago.toUpperCase() !== 'PENDIENTE')
+      .reduce((total, cita) => {
+        const s = SERVICIOS.find(serv => serv.nombre === cita.servicio);
+        const precioNum = s ? parseInt(s.precio.replace('$', '')) : 350;
+        return total + precioNum;
+      }, 0);
+  };
+  // 🚀 FUNCIÓN ESTRELLA: GENERADOR DE PDF DE AUDITORÍA (VERSIÓN DESGLOSE DE SERVICIOS Y MÉTODOS DE PAGO)
   const descargarCorteCaja = () => {
     const totalIngresos = calcularIngresosDelDia();
     const fechaFinal = fechaSeleccionada.toISOString().split('T')[0];
     const citasFiltradas = citasDelDia.filter(cita => BARBEROS.includes(cita.barbero));
     
-    // Calculamos métricas individuales por barbero
+    // VARIABLES PARA CONTADORES DE PAGO
+    let totalEfectivo = 0;
+    let totalTarjeta = 0;
+    let conteoEfectivo = 0;
+    let conteoTarjeta = 0;
+
+    // Calculamos métricas individuales por barbero con desglose de servicios
     const metricasBarberos = BARBEROS.map(barbero => {
       const citasBarbero = citasFiltradas.filter(c => c.barbero === barbero);
-      const ingresosBarbero = citasBarbero.reduce((sum, cita) => {
+      
+      const conteoServicios = {};
+      let ingresosBarbero = 0;
+      
+      citasBarbero.forEach(cita => {
+        // Calcular ingresos
         const s = SERVICIOS.find(serv => serv.nombre === cita.servicio);
-        return sum + (s ? parseInt(s.precio.replace('$', '')) : 350);
-      }, 0);
-      const porcentaje = totalIngresos > 0 ? ((ingresosBarbero / totalIngresos) * 100).toFixed(1) : 0;
-      return { barbero, cantidad: citasBarbero.length, ingresos: ingresosBarbero, porcentaje };
+        const precioNum = s ? parseInt(s.precio.replace('$', '')) : 350;
+        ingresosBarbero += precioNum;
+        
+        // Contar servicios
+        if (conteoServicios[cita.servicio]) {
+          conteoServicios[cita.servicio]++;
+        } else {
+          conteoServicios[cita.servicio] = 1;
+        }
+
+        // CONTROL DE MÉTODOS DE PAGO (Si no tiene, asumimos efectivo por defecto)
+        const metodo = cita.metodo_pago ? cita.metodo_pago.toLowerCase() : 'efectivo';
+        if (metodo === 'tarjeta') {
+          totalTarjeta += precioNum;
+          conteoTarjeta++;
+        } else {
+          totalEfectivo += precioNum;
+          conteoEfectivo++;
+        }
+      });
+
+      const desglose = Object.entries(conteoServicios)
+        .map(([nombre, cant]) => `<span style="display:inline-block; background:#eee; padding:2px 6px; border-radius:4px; margin:2px; font-size:8pt;">${cant}x ${nombre}</span>`)
+        .join(' ');
+
+      return { 
+        barbero, 
+        amount: citasBarbero.length, 
+        ingresos: ingresosBarbero, 
+        desglose: desglose || '<span style="color:#999; font-style:italic;">Sin servicios</span>' 
+      };
     });
 
-    // Construimos la tabla de citas
+   // Construimos la tabla de citas (VERSIÓN ULTRA-COMPATIBLE SIN CORTES)
     const filasCitas = citasFiltradas.length > 0 
       ? citasFiltradas.map(cita => {
           const s = SERVICIOS.find(serv => serv.nombre === cita.servicio);
           const precio = s ? s.precio : '$350';
+          
+          const metodoTexto = cita.metodo_pago ? cita.metodo_pago.toUpperCase() : 'EFECTIVO';
+          
+          // Usamos indicadores de texto plano y colores directos en la tipografía para evitar bugs de la librería
+          let estadoPagoHTML = '';
+          if (metodoTexto === 'TARJETA') {
+            estadoPagoHTML = `<span style="color: #3b82f6; font-weight: bold; font-size: 9pt;">🔵 TARJETA</span>`;
+          } else if (metodoTexto === 'PENDIENTE') {
+            estadoPagoHTML = `<span style="color: #6b7280; font-weight: bold; font-size: 9pt;">⚪ PENDIENTE</span>`;
+          } else {
+            estadoPagoHTML = `<span style="color: #10b981; font-weight: bold; font-size: 9pt;">🟢 EFECTIVO</span>`;
+          }
+          
           return `
-            <tr>
-              <td>${cita.horario}</td>
-              <td><span class="badge-barber">${cita.barbero}</span></td>
-              <td>${cita.servicio}</td>
-              <td>${precio}.00</td>
+            <tr style="border-bottom: 1px solid #eeeeee;">
+              <td style="padding: 14px 15px; font-weight: bold; color: #555; vertical-align: middle;">${cita.horario}</td>
+              <td style="padding: 14px 15px; vertical-align: middle;"><span style="background-color: #f0f0f0; padding: 4px 10px; border-radius: 4px; font-size: 9pt; font-weight: bold; color: #333;">${cita.barbero}</span></td>
+              <td style="padding: 14px 15px; vertical-align: middle; color: #333;">${cita.servicio}</td>
+              <td style="padding: 14px 15px; vertical-align: middle;">
+                ${estadoPagoHTML}
+              </td>
+              <td style="padding: 14px 15px; font-weight: bold; color: #b8922f; vertical-align: middle;">${precio}.00</td>
             </tr>
           `;
         }).join('')
-      : `<tr><td colspan="4" style="text-align:center; padding: 20px;">No hay citas registradas para este día.</td></tr>`;
+      : `<tr><td colspan="5" style="text-align:center; padding: 30px; color: #999; font-style: italic;">No hay transacciones registradas en esta fecha.</td></tr>`;
 
-    // Construimos la tabla de métricas
     const filasMetricas = metricasBarberos.map(m => `
-      <tr>
-        <td><strong>${m.barbero}</strong></td>
-        <td>${m.cantidad} servicios</td>
-        <td>${m.porcentaje}%</td>
-        <td><strong>$${m.ingresos}.00 MXN</strong></td>
+      <tr style="border-bottom: 1px solid #eeeeee;">
+        <td style="padding: 12px 15px; font-weight: bold; color: #333;">${m.barbero}</td>
+        <td style="padding: 12px 15px;">${m.amount} servicios</td>
+        <td style="padding: 12px 15px; line-height: 1.5;">${m.desglose}</td>
+        <td style="padding: 12px 15px; font-weight: bold; color: #b8922f;">$${m.ingresos}.00 MXN</td>
       </tr>
     `).join('');
 
     const htmlContent = `
-      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; padding: 40px;">
-        <div style="background-color: #121212; color: #fff; padding: 40px; border-bottom: 5px solid #d4af37; border-radius: 12px; margin-bottom: 40px;">
-          <h1 style="margin: 0; font-size: 28pt; font-weight: 900;">VINTAGE<span style="color: #d4af37;">STUDIO</span></h1>
-          <p style="margin: 5px 0 0; font-size: 10pt; text-transform: uppercase; letter-spacing: 4px; color: #d4af37;">Master Barber & Grooming</p>
-          <div style="float: right; margin-top: -55px; text-align: right;">
-            <h2 style="margin: 0; color: #d4af37; font-size: 18pt; text-transform: uppercase;">Corte de Caja</h2>
-            <p style="margin: 5px 0 0; color: #a0a0a0; font-size: 11pt;">Reporte Diario Operativo</p>
+      <style>
+        tr { page-break-inside: avoid; }
+        td, th { page-break-inside: avoid; }
+        .section-container { page-break-inside: avoid; margin-bottom: 40px; }
+        * { box-sizing: border-box; }
+      </style>
+      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #222; padding: 30px; max-width: 800px; margin: 0 auto; background: #fff;">
+        
+        <!-- HEADER CORPORATIVO -->
+        <div style="background-color: #111; color: #fff; padding: 35px; border-bottom: 6px solid #d4af37; border-radius: 10px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h1 style="margin: 0; font-size: 26pt; font-weight: 900; letter-spacing: -1px;">VINTAGE<span style="color: #d4af37;">STUDIO</span></h1>
+            <p style="margin: 4px 0 0; font-size: 9pt; text-transform: uppercase; letter-spacing: 3px; color: #d4af37;">Master Barber & Grooming</p>
+          </div>
+          <div style="text-align: right;">
+            <h2 style="margin: 0; color: #fff; font-size: 16pt; text-transform: uppercase;">Corte de Caja</h2>
+            <p style="margin: 4px 0 0; color: #aaa; font-size: 10pt;">Reporte Operativo Diario</p>
           </div>
         </div>
 
-        <div style="background-color: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 25px; margin-bottom: 40px;">
-          <table style="width: 100%; text-align: center;">
+        <!-- RESUMEN FINANCIERO TRADICIONAL + DESGLOSE DE PAGO -->
+        <div class="section-container" style="background-color: #fafafa; border: 1px solid #eaeaea; border-radius: 8px; padding: 20px;">
+          <table style="width: 100%; text-align: center; border-collapse: collapse; margin-bottom: 15px;">
             <tr>
-              <td style="border-right: 1px solid #ddd; width: 33%;">
-                <span style="font-size: 8pt; color: #888; text-transform: uppercase; display: block; margin-bottom: 8px;">Fecha</span>
-                <span style="font-size: 14pt; font-weight: bold;">${fechaFinal}</span>
+              <td style="border-right: 1px solid #ddd; width: 33%; padding: 10px;">
+                <span style="font-size: 8pt; color: #777; text-transform: uppercase; display: block; margin-bottom: 5px; font-weight: bold;">Fecha Operativa</span>
+                <span style="font-size: 14pt; font-weight: 900; color: #111;">${fechaFinal}</span>
               </td>
-              <td style="border-right: 1px solid #ddd; width: 33%;">
-                <span style="font-size: 8pt; color: #888; text-transform: uppercase; display: block; margin-bottom: 8px;">Citas Totales</span>
-                <span style="font-size: 14pt; font-weight: bold;">${citasFiltradas.length}</span>
+              <td style="border-right: 1px solid #ddd; width: 33%; padding: 10px;">
+                <span style="font-size: 8pt; color: #777; text-transform: uppercase; display: block; margin-bottom: 5px; font-weight: bold;">Transacciones</span>
+                <span style="font-size: 14pt; font-weight: 900; color: #111;">${citasFiltradas.length}</span>
               </td>
-              <td style="width: 33%;">
-                <span style="font-size: 8pt; color: #888; text-transform: uppercase; display: block; margin-bottom: 8px;">Ingresos Brutos</span>
-                <span style="font-size: 14pt; font-weight: bold; color: #b8922f;">$${totalIngresos}.00 MXN</span>
+              <td style="width: 33%; padding: 10px;">
+                <span style="font-size: 8pt; color: #777; text-transform: uppercase; display: block; margin-bottom: 5px; font-weight: bold;">Ingreso Bruto Total</span>
+                <span style="font-size: 16pt; font-weight: 900; color: #d4af37;">$${totalIngresos}.00 MXN</span>
               </td>
             </tr>
           </table>
+          
+          <!-- NUEVO BLOQUE: EFECTIVO VS TARJETA -->
+          <div style="border-top: 1px solid #eee; padding-top: 15px; display: flex; justify-content: space-around; font-size: 10pt;">
+            <div style="text-align: center;">
+              <span style="color: #10b981; font-weight: bold; display: block; font-size: 8pt; uppercase;">💵 TOTAL EFECTIVO</span>
+              <span style="font-size: 12pt; font-weight: 800; color: #333;">$${totalEfectivo}.00 MXN</span> <small style="color: #888;">(${conteoEfectivo} ventas)</small>
+            </div>
+            <div style="text-align: center;">
+              <span style="color: #3b82f6; font-weight: bold; display: block; font-size: 8pt; uppercase;">💳 TOTAL TARJETA</span>
+              <span style="font-size: 12pt; font-weight: 800; color: #333;">$${totalTarjeta}.00 MXN</span> <small style="color: #888;">(${conteoTarjeta} ventas)</small>
+            </div>
+          </div>
         </div>
 
-        <div style="margin-bottom: 50px;">
-          <h3 style="border-left: 5px solid #d4af37; padding-left: 15px; margin-bottom: 20px; text-transform: uppercase; font-size: 13pt;">Desglose Transaccional</h3>
-          <table style="width: 100%; border-collapse: collapse; font-size: 10pt;">
+        <!-- RENDIMIENTO POR SILLA -->
+        <div class="section-container">
+          <h3 style="border-left: 4px solid #d4af37; padding-left: 12px; margin-bottom: 15px; text-transform: uppercase; font-size: 12pt; color: #111; font-weight: 800;">Rendimiento por Especialista</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 10pt; border: 1px solid #eee;">
             <thead>
-              <tr style="background-color: #1a1a1a; color: #fff; text-transform: uppercase;">
-                <th style="padding: 15px; text-align: left;">Horario</th>
-                <th style="padding: 15px; text-align: left;">Barbero</th>
-                <th style="padding: 15px; text-align: left;">Servicio</th>
-                <th style="padding: 15px; text-align: left;">Monto</th>
+              <tr style="background-color: #111; color: #fff; text-transform: uppercase; font-size: 9pt;">
+                <th style="padding: 12px 15px; text-align: left;">Barbero</th>
+                <th style="padding: 12px 15px; text-align: left;">Volumen</th>
+                <th style="padding: 12px 15px; text-align: left;">Servicios Realizados</th>
+                <th style="padding: 12px 15px; text-align: left;">Facturado</th>
+              </tr>
+            </thead>
+            <tbody>${filasMetricas}</tbody>
+          </table>
+        </div>
+
+        <!-- DESGLOSE TRANSACCIONAL -->
+        <div class="section-container">
+          <h3 style="border-left: 4px solid #d4af37; padding-left: 12px; margin-bottom: 15px; text-transform: uppercase; font-size: 12pt; color: #111; font-weight: 800;">Desglose de Transacciones</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 10pt; border: 1px solid #eee;">
+            <thead>
+              <tr style="background-color: #111; color: #fff; text-transform: uppercase; font-size: 9pt;">
+                <th style="padding: 12px 15px; text-align: left;">Horario</th>
+                <th style="padding: 12px 15px; text-align: left;">Barbero</th>
+                <th style="padding: 12px 15px; text-align: left;">Servicio Realizado</th>
+                <th style="padding: 12px 15px; text-align: left;">Método Pago</th>
+                <th style="padding: 12px 15px; text-align: left;">Monto</th>
               </tr>
             </thead>
             <tbody>${filasCitas}</tbody>
           </table>
         </div>
 
-        <div>
-          <h3 style="border-left: 5px solid #d4af37; padding-left: 15px; margin-bottom: 20px; text-transform: uppercase; font-size: 13pt;">Rendimiento por Silla</h3>
-          <table style="width: 100%; border-collapse: collapse; font-size: 10pt;">
-            <thead>
-              <tr style="background-color: #1a1a1a; color: #fff; text-transform: uppercase;">
-                <th style="padding: 15px; text-align: left;">Especialista</th>
-                <th style="padding: 15px; text-align: left;">Servicios</th>
-                <th style="padding: 15px; text-align: left;">Part.</th>
-                <th style="padding: 15px; text-align: left;">Total</th>
-              </tr>
-            </thead>
-            <tbody>${filasMetricas}</tbody>
-          </table>
+        <div style="text-align: center; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">
+          <p style="font-size: 8pt; color: #999; text-transform: uppercase; letter-spacing: 1px;">Documento generado automáticamente por Prisma Studio POS</p>
         </div>
       </div>
     `;
 
-    // Opciones del PDF
     const opciones = {
-      margin:       5,
-      filename:     `corte_caja_${fechaFinal}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
+      margin:       [10, 0, 10, 0],
+      filename:     `Corte_de_Caja_VintageStudio_${fechaFinal}.pdf`,
+      image:        { type: 'jpeg', quality: 1 },
+      html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
-    // Crear el elemento oculto para renderizar el PDF
     const elemento = document.createElement('div');
     elemento.innerHTML = htmlContent;
     html2pdf().set(opciones).from(elemento).save();
   };
-
   const finalizarCita = async () => {
     if (!reserva.servicio || !reserva.horario || !reserva.barbero) return;
     const fechaFinal = fechaSeleccionada.toISOString().split('T')[0];
@@ -283,7 +411,7 @@ export default function BarberiaPremium() {
   // VISTA 2: PRISMA DASHBOARD (PANTALLA DE ADMIN)
   // ==========================================
   if (modoAdmin) {
-    if (!pinCorrecto) {
+   if (!pinCorrecto) {
       return (
         <div className="bg-[#121212] min-h-screen flex items-center justify-center font-sans p-4">
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#1a1a1a] border border-white/10 p-8 rounded-2xl w-full max-w-sm text-center shadow-2xl">
@@ -303,15 +431,21 @@ export default function BarberiaPremium() {
         </div>
       );
     }
+ 
 
     return (
       <div className="bg-[#121212] text-[#f5f5f5] min-h-screen font-sans p-6">
-        <nav className="flex justify-between items-center mb-10 border-b border-white/10 pb-6">
+        <nav className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-10 border-b border-white/10 pb-6">
           <div>
             <div className="text-2xl font-black tracking-tighter text-white">PRISMA<span className="text-[#d4af37]">DASHBOARD</span></div>
             <p className="text-[10px] text-[#d4af37] tracking-[0.2em] uppercase mt-1">Ecosistema Multi-Barbero</p>
           </div>
-          <button onClick={() => { window.location.hash = ""; }} className="text-xs uppercase font-bold text-white/50 hover:text-white border border-white/20 px-4 py-2 rounded-lg">Cerrar Sesión</button>
+          <button 
+            onClick={() => { window.location.hash = ""; }} 
+            className="text-xs uppercase font-bold text-white/50 hover:text-white border border-white/20 px-4 py-2 rounded-lg w-full sm:w-auto text-center"
+          >
+            Cerrar Sesión
+          </button>
         </nav>
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 gap-4">
@@ -320,11 +454,78 @@ export default function BarberiaPremium() {
               <p className="text-xs text-white/40 uppercase tracking-wider mt-1">Fecha seleccionada: {fechaSeleccionada.toISOString().split('T')[0]}</p>
             </div>
             
-            <div className="flex gap-4 items-center w-full md:w-auto">
-              {/* BOTÓN NUEVO: DESCARGAR PDF */}
-              <button onClick={descargarCorteCaja} className="bg-[#d4af37]/10 border border-[#d4af37]/30 hover:bg-[#d4af37] hover:text-black text-[#d4af37] px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all h-full flex items-center shadow-lg shadow-[#d4af37]/5">
+            <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto items-center">
+              {/* BOTÓN 1: VENTA MOSTRADOR */}
+              <button 
+                onClick={() => setMostrarModalWalkIn(true)} 
+                className="bg-[#d4af37] text-black px-6 h-12 rounded-xl font-black uppercase text-xs w-full sm:w-48 flex items-center justify-center shadow-lg transition-all hover:bg-[#b8922f]"
+              >
+                ➕ Venta Mostrador
+              </button>
+              
+              {/* BOTÓN 2: DESCARGAR PDF */}
+              <button 
+                onClick={descargarCorteCaja} 
+                className="bg-[#d4af37]/10 border border-[#d4af37]/30 hover:bg-[#d4af37] hover:text-black text-[#d4af37] px-6 h-12 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center shadow-lg shadow-[#d4af37]/5 w-full sm:w-48"
+              >
                 📥 Descargar PDF
               </button>
+
+              {mostrarModalWalkIn && (
+                <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+                  <form onSubmit={registrarWalkIn} className="bg-[#121212] border border-[#d4af37] p-6 rounded-2xl w-full max-w-sm">
+                    <h2 className="text-white font-black uppercase mb-4 text-sm">Nueva Venta Mostrador</h2>
+                    
+                    {/* Nombre Cliente */}
+                    <input placeholder="Nombre Cliente" onChange={(e) => setFormWalkIn({...formWalkIn, cliente: e.target.value})} className="w-full bg-[#1a1a1a] border border-white/20 p-2.5 rounded-xl mb-3 text-white text-sm placeholder:text-white/30" />
+                    
+                    {/* Menú Barbero */}
+                    <div className="relative mb-3">
+                      <div onClick={() => setMenuBarberoAbierto(!menuBarberoAbierto)} className="w-full bg-[#1a1a1a] border border-white/20 p-2.5 rounded-xl text-white text-sm cursor-pointer flex justify-between items-center">
+                        {formWalkIn.barbero} <span className="text-[10px]">▼</span>
+                      </div>
+                      {menuBarberoAbierto && (
+                        <div className="absolute w-full bg-[#1a1a1a] border border-[#d4af37] rounded-xl mt-1 z-50 shadow-xl overflow-hidden text-sm">
+                          {BARBEROS.map(b => (
+                            <div key={b} onClick={() => { setFormWalkIn({...formWalkIn, barbero: b}); setMenuBarberoAbierto(false); }} className="p-3 hover:bg-[#d4af37] hover:text-black cursor-pointer text-white">{b}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Menú Servicios */}
+                    <div className="relative mb-3">
+                      <div onClick={() => setMenuServicioAbierto(!menuServicioAbierto)} className="w-full bg-[#1a1a1a] border border-white/20 p-2.5 rounded-xl text-white text-sm cursor-pointer flex justify-between items-center">
+                        {formWalkIn.servicio} <span className="text-[10px]">▼</span>
+                      </div>
+                      {menuServicioAbierto && (
+                        <div className="absolute w-full bg-[#1a1a1a] border border-[#d4af37] rounded-xl mt-1 z-50 shadow-xl overflow-hidden text-sm">
+                          {SERVICIOS.map(s => (
+                            <div key={s.id} onClick={() => { setFormWalkIn({...formWalkIn, servicio: s.nombre}); setMenuServicioAbierto(false); }} className="p-3 hover:bg-[#d4af37] hover:text-black cursor-pointer text-white">{s.nombre}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Menú Pago */}
+                    <div className="relative mb-3">
+                      <div onClick={() => setMenuPagoAbierto(!menuPagoAbierto)} className="w-full bg-[#1a1a1a] border border-white/20 p-2.5 rounded-xl text-white text-sm cursor-pointer flex justify-between items-center">
+                        {formWalkIn.metodoPago.charAt(0).toUpperCase() + formWalkIn.metodoPago.slice(1)} <span className="text-[10px]">▼</span>
+                      </div>
+                      {menuPagoAbierto && (
+                        <div className="absolute w-full bg-[#1a1a1a] border border-[#d4af37] rounded-xl mt-1 z-50 shadow-xl overflow-hidden text-sm">
+                          {['Efectivo', 'Tarjeta'].map(p => (
+                            <div key={p} onClick={() => { setFormWalkIn({...formWalkIn, metodoPago: p.toLowerCase()}); setMenuPagoAbierto(false); }} className="p-3 hover:bg-[#d4af37] hover:text-black cursor-pointer text-white">{p}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <button type="submit" className="w-full bg-[#d4af37] py-3 rounded-xl font-black text-black text-sm mt-2">REGISTRAR</button>
+                    <button type="button" onClick={() => setMostrarModalWalkIn(false)} className="w-full mt-3 text-white/30 text-[10px] uppercase">Cancelar</button>
+                  </form>
+                </div>
+              )}
 
               <div className="bg-white/5 px-6 py-3 rounded-xl border border-white/10 text-center min-w-[150px]">
                 <span className="block text-[10px] text-white/40 uppercase tracking-widest">Caja Estimada Hoy</span>
@@ -351,13 +552,17 @@ export default function BarberiaPremium() {
                       </div>
                     ) : (
                       citasDelBarbero.map((cita, idx) => (
-                        <div key={idx} className="bg-black/40 border border-white/10 p-5 rounded-xl relative overflow-hidden group hover:border-[#d4af37]/40 transition-all">
-                          <div className="flex justify-between items-start mb-3">
-                            <span className="bg-[#d4af37]/10 text-[#d4af37] px-2 py-0.5 rounded text-[10px] font-black tracking-wider">{cita.horario}</span>
-                          </div>
-                          <h4 className="font-bold text-sm uppercase text-white">{cita.servicio}</h4>
-                        </div>
-                      ))
+  <div key={idx} className="bg-black/40 border border-white/10 p-5 rounded-xl relative overflow-hidden group hover:border-[#d4af37]/40 transition-all">
+    <div className="flex justify-between items-start mb-3">
+      <span className="bg-[#d4af37]/10 text-[#d4af37] px-2 py-0.5 rounded text-[10px] font-black tracking-wider">{cita.horario}</span>
+      {/* AQUÍ ESTÁ EL PRECIO */}
+      <span className="text-[#d4af37] font-black text-sm">
+        {SERVICIOS.find(s => s.nombre === cita.servicio)?.precio || "$0"}
+      </span>
+    </div>
+    <h4 className="font-bold text-sm uppercase text-white">{cita.servicio}</h4>
+  </div>
+))
                     )}
                   </div>
                 </div>
@@ -368,6 +573,95 @@ export default function BarberiaPremium() {
       </div>
     );
   }
+     // ==========================================
+// VISTA 3: PANEL EXCLUSIVO DE BARBEROS
+// ==========================================
+if (barberoLogueado) {
+  // Filtramos la agenda para mostrarle ÚNICAMENTE sus citas y sus Walk-In del día
+  const misCitasDelDia = citasDelDia.filter(
+    cita => cita.barbero === barberoLogueado && BARBEROS.includes(cita.barbero)
+  );
+
+  const serviciosCompletados = misCitasDelDia.filter(c => c.metodo_pago && c.metodo_pago !== 'PENDIENTE').length;
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 font-sans">
+      {/* HEADER DEL BARBERO */}
+      <nav className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+        <div>
+          <p className="text-[10px] text-[#d4af37] tracking-widest uppercase">Especialista Activo</p>
+          <h1 className="text-xl font-black uppercase tracking-tight">💈 {barberoLogueado}</h1>
+        </div>
+        <button 
+          onClick={() => setBarberoLogueado(null)} 
+          className="text-[10px] uppercase font-bold text-white/40 border border-white/10 px-3 py-1.5 rounded-lg hover:text-white"
+        >
+          Salir
+        </button>
+      </nav>
+
+      {/* METRICAS SENCILLAS (SIN DINERO, SOLO VOLUMEN) */}
+      <div className="bg-[#121212] border border-white/5 rounded-2xl p-4 mb-6 flex justify-between items-center">
+        <div>
+          <p className="text-xs text-white/50 uppercase">Servicios Hoy</p>
+          <p className="text-2xl font-black text-[#d4af37]">{misCitasDelDia.length}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-white/50 uppercase">Completados</p>
+          <p className="text-2xl font-black text-green-400">{serviciosCompletados}</p>
+        </div>
+      </div>
+
+      {/* LISTA DE CITAS DEL BARBERO */}
+      <h2 className="text-xs font-black uppercase tracking-wider text-white/40 mb-3">Mi Agenda del Día</h2>
+      
+      <div className="space-y-3">
+        {misCitasDelDia.length > 0 ? (
+          misCitasDelDia.map((cita, index) => {
+            const esPendiente = !cita.metodo_pago || cita.metodo_pago === 'PENDIENTE';
+            
+            return (
+              <div 
+                key={index} 
+                className={`p-4 rounded-xl border transition-all ${
+                  esPendiente ? 'bg-[#161616] border-[#d4af37]/30' : 'bg-[#121212]/40 border-white/5 opacity-60'
+                }`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-sm font-black text-[#d4af37] bg-[#d4af37]/10 px-2 py-0.5 rounded-md">
+                    {cita.horario}
+                  </span>
+                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-md ${
+                    esPendiente ? 'bg-amber-500/10 text-amber-400' : 'bg-green-500/10 text-green-400'
+                  }`}>
+                    {esPendiente ? 'En Espera' : '✓ Terminado'}
+                  </span>
+                </div>
+
+                <p className="font-bold text-white uppercase text-sm">{cita.cliente || "Cliente Mostrador"}</p>
+                <p className="text-xs text-white/60 mt-0.5">{cita.servicio}</p>
+
+                {/* BOTÓN PARA FINALIZAR QUE ELLOS PUEDEN TOCAR */}
+                {esPendiente && (
+                  <button
+                    onClick={() => finalizarCita(cita)} // Reutiliza tu función para liberar el horario
+                    className="w-full mt-3 bg-[#d4af37] text-black text-xs font-black py-2 rounded-lg uppercase tracking-wider active:scale-95 transition-transform"
+                  >
+                    Marcar como Listo
+                  </button>
+                )}
+              </div>
+            );
+          })
+        ) : (
+          <div className="text-center py-10 text-white/30 text-xs italic">
+            No tienes servicios asignados para hoy todavía.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
   // ==========================================
   // VISTA 1: SITIO WEB (VISTA CLIENTE)
