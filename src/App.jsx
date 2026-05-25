@@ -29,6 +29,7 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
   const [citasDelDia, setCitasDelDia] = useState([]);
   const [errorPin, setErrorPin] = useState(false);
   const [barberoLogueado, setBarberoLogueado] = useState(null); // Almacena el nombre del barbero activo
+  const [citaEnPago, setCitaEnPago] = useState(null);
   // ESTADOS PARA WALK-IN
   const [mostrarModalWalkIn, setMostrarModalWalkIn] = useState(false);
   const [triggerRecarga, setTriggerRecarga] = useState(0);
@@ -162,26 +163,35 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
     setTriggerRecarga(prev => prev + 1);
   };
   // 🔥 CORRECCIÓN: Función faltante para calcular la caja del día
+ // 🔥 CORRECCIÓN: Función para calcular la caja del día sin ignorar pendientes
   const calcularIngresosDelDia = () => {
-    return citasDelDia
-      .filter(cita => cita.metodo_pago && cita.metodo_pago.toUpperCase() !== 'PENDIENTE')
-      .reduce((total, cita) => {
-        const s = SERVICIOS.find(serv => serv.nombre === cita.servicio);
-        const precioNum = s ? parseInt(s.precio.replace('$', '')) : 350;
-        return total + precioNum;
-      }, 0);
+    if (!citasDelDia || citasDelDia.length === 0) return 0;
+
+    return citasDelDia.reduce((total, cita) => {
+      // Buscamos el precio del servicio en base a tu lista global SERVICIOS
+      const s = SERVICIOS.find(serv => 
+        serv.nombre.toLowerCase().trim() === (cita.servicio ? cita.servicio.toLowerCase().trim() : "")
+      );
+      
+      // Si encuentra el servicio, usa su precio; si no, por seguridad usamos 350 de base
+      const precioNum = s ? parseInt(s.precio.replace('$', '')) : 350;
+      
+      return total + precioNum;
+    }, 0);
   };
   // 🚀 FUNCIÓN ESTRELLA: GENERADOR DE PDF DE AUDITORÍA (VERSIÓN DESGLOSE DE SERVICIOS Y MÉTODOS DE PAGO)
   const descargarCorteCaja = () => {
     const totalIngresos = calcularIngresosDelDia();
     const fechaFinal = fechaSeleccionada.toISOString().split('T')[0];
     const citasFiltradas = citasDelDia.filter(cita => BARBEROS.includes(cita.barbero));
-    
-    // VARIABLES PARA CONTADORES DE PAGO
+
+    // VARIABLES PARA CONTADORES DE PAGO REALES
     let totalEfectivo = 0;
     let totalTarjeta = 0;
+    let totalPendiente = 0;
     let conteoEfectivo = 0;
     let conteoTarjeta = 0;
+    let conteoPendiente = 0;
 
     // Calculamos métricas individuales por barbero con desglose de servicios
     const metricasBarberos = BARBEROS.map(barbero => {
@@ -203,11 +213,14 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
           conteoServicios[cita.servicio] = 1;
         }
 
-        // CONTROL DE MÉTODOS DE PAGO (Si no tiene, asumimos efectivo por defecto)
-        const metodo = cita.metodo_pago ? cita.metodo_pago.toLowerCase() : 'efectivo';
+        // CONTROL DE MÉTODOS DE PAGO PARA EL RESUMEN SUPERIOR
+        const metodo = cita.metodo_pago ? cita.metodo_pago.toLowerCase().trim() : 'pendiente';
         if (metodo === 'tarjeta') {
           totalTarjeta += precioNum;
           conteoTarjeta++;
+        } else if (metodo === 'pendiente') {
+          totalPendiente += precioNum;
+          conteoPendiente++;
         } else {
           totalEfectivo += precioNum;
           conteoEfectivo++;
@@ -226,15 +239,14 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
       };
     });
 
-   // Construimos la tabla de citas (VERSIÓN ULTRA-COMPATIBLE SIN CORTES)
+    // Construimos la tabla de citas (VERSIÓN ULTRA-COMPATIBLE SIN CORTES)
     const filasCitas = citasFiltradas.length > 0 
       ? citasFiltradas.map(cita => {
           const s = SERVICIOS.find(serv => serv.nombre === cita.servicio);
           const precio = s ? s.precio : '$350';
           
-          const metodoTexto = cita.metodo_pago ? cita.metodo_pago.toUpperCase() : 'EFECTIVO';
+          const metodoTexto = cita.metodo_pago ? cita.metodo_pago.toUpperCase().trim() : 'PENDIENTE';
           
-          // Usamos indicadores de texto plano y colores directos en la tipografía para evitar bugs de la librería
           let estadoPagoHTML = '';
           if (metodoTexto === 'TARJETA') {
             estadoPagoHTML = `<span style="color: #3b82f6; font-weight: bold; font-size: 9pt;">🔵 TARJETA</span>`;
@@ -276,7 +288,6 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
       </style>
       <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #222; padding: 30px; max-width: 800px; margin: 0 auto; background: #fff;">
         
-        <!-- HEADER CORPORATIVO -->
         <div style="background-color: #111; color: #fff; padding: 35px; border-bottom: 6px solid #d4af37; border-radius: 10px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center;">
           <div>
             <h1 style="margin: 0; font-size: 26pt; font-weight: 900; letter-spacing: -1px;">VINTAGE<span style="color: #d4af37;">STUDIO</span></h1>
@@ -288,7 +299,6 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
           </div>
         </div>
 
-        <!-- RESUMEN FINANCIERO TRADICIONAL + DESGLOSE DE PAGO -->
         <div class="section-container" style="background-color: #fafafa; border: 1px solid #eaeaea; border-radius: 8px; padding: 20px;">
           <table style="width: 100%; text-align: center; border-collapse: collapse; margin-bottom: 15px;">
             <tr>
@@ -307,20 +317,22 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
             </tr>
           </table>
           
-          <!-- NUEVO BLOQUE: EFECTIVO VS TARJETA -->
           <div style="border-top: 1px solid #eee; padding-top: 15px; display: flex; justify-content: space-around; font-size: 10pt;">
             <div style="text-align: center;">
-              <span style="color: #10b981; font-weight: bold; display: block; font-size: 8pt; uppercase;">💵 TOTAL EFECTIVO</span>
+              <span style="color: #10b981; font-weight: bold; display: block; font-size: 8pt; text-transform: uppercase;">💵 TOTAL EFECTIVO</span>
               <span style="font-size: 12pt; font-weight: 800; color: #333;">$${totalEfectivo}.00 MXN</span> <small style="color: #888;">(${conteoEfectivo} ventas)</small>
             </div>
             <div style="text-align: center;">
-              <span style="color: #3b82f6; font-weight: bold; display: block; font-size: 8pt; uppercase;">💳 TOTAL TARJETA</span>
+              <span style="color: #3b82f6; font-weight: bold; display: block; font-size: 8pt; text-transform: uppercase;">💳 TOTAL TARJETA</span>
               <span style="font-size: 12pt; font-weight: 800; color: #333;">$${totalTarjeta}.00 MXN</span> <small style="color: #888;">(${conteoTarjeta} ventas)</small>
+            </div>
+            <div style="text-align: center;">
+              <span style="color: #6b7280; font-weight: bold; display: block; font-size: 8pt; text-transform: uppercase;">⚪ POR COBRAR (PENDIENTE)</span>
+              <span style="font-size: 12pt; font-weight: 800; color: #6b7280;">$${totalPendiente}.00 MXN</span> <small style="color: #888;">(${conteoPendiente} citas)</small>
             </div>
           </div>
         </div>
 
-        <!-- RENDIMIENTO POR SILLA -->
         <div class="section-container">
           <h3 style="border-left: 4px solid #d4af37; padding-left: 12px; margin-bottom: 15px; text-transform: uppercase; font-size: 12pt; color: #111; font-weight: 800;">Rendimiento por Especialista</h3>
           <table style="width: 100%; border-collapse: collapse; font-size: 10pt; border: 1px solid #eee;">
@@ -336,7 +348,6 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
           </table>
         </div>
 
-        <!-- DESGLOSE TRANSACCIONAL -->
         <div class="section-container">
           <h3 style="border-left: 4px solid #d4af37; padding-left: 12px; margin-bottom: 15px; text-transform: uppercase; font-size: 12pt; color: #111; font-weight: 800;">Desglose de Transacciones</h3>
           <table style="width: 100%; border-collapse: collapse; font-size: 10pt; border: 1px solid #eee;">
@@ -406,17 +417,15 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
     const textoTicket = 
 `BARBERIA VINTAGE STUDIO
 --------------------------------------
-¡Hola! Me gustaría confirmar mi cita agendada desde el sitio web.
+¡Hola! Me gustaria confirmar mi cita agendada desde el sitio web. Aquí estan los detalles de mi turno:
 
-🔹 SERVICIO: ${reserva.servicio.nombre}
-🔹 BARBERO: ${reserva.barbero}
-🔹 FECHA: ${fechaLegible.toUpperCase()}
-🔹 HORARIO: ${reserva.horario}
+- SERVICIO: ${reserva.servicio.nombre}
+- BARBERO: ${reserva.barbero}
+- FECHA: ${fechaLegible.toUpperCase()}
+- HORARIO: ${reserva.horario}
 
 --------------------------------------
-✨ Agradecemos su puntualidad.
-¡Nos vemos pronto!`;
-
+Agradecemos su puntualidad. ¡Nos vemos pronto!`;
     // 5. APERTURA SEGURA: Usamos window.location.href en lugar de window.open
     // Esto es mucho más compatible con navegadores móviles (Chrome/Safari en iOS/Android)
     const urlWhatsapp = `https://wa.me/${numeroTelefono}?text=${encodeURIComponent(textoTicket)}`;
@@ -424,6 +433,37 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
     // Cambiamos el comportamiento:
     window.location.href = urlWhatsapp; 
   };
+
+ const confirmarPagoCita = async (cita, metodo) => {
+  const metodoLimpio = metodo.toLowerCase().trim();
+
+  // 1. Verificación: ¿Qué ID estamos buscando?
+  console.log("Intentando actualizar ID:", cita.id); 
+
+  // 2. Ejecución con manejo de error estricto
+  const { data, error } = await supabase
+    .from('citas')
+    .update({ metodo_pago: metodoLimpio })
+    .eq('id', cita.id)
+    .select(); // <--- IMPORTANTE: Esto devuelve la fila actualizada
+
+  // 3. Si hay error o si 'data' está vacío, sabremos que algo falló
+  if (error) {
+    console.error("ERROR CRÍTICO DE SUPABASE:", error);
+    alert("Error de Supabase: " + error.message);
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    console.warn("ADVERTENCIA: Se ejecutó el comando, pero no se encontró ninguna fila con ese ID.");
+    alert("No se encontró la cita en la base de datos. ¿El ID es correcto?");
+    return;
+  }
+
+  // 4. Si llegamos aquí, es que SÍ se actualizó
+  alert("¡Guardado exitosamente!");
+  setTriggerRecarga(prev => prev + 1);
+};
   // ==========================================
   // VISTA 2: PRISMA DASHBOARD (PANTALLA DE ADMIN)
   // ==========================================
@@ -572,12 +612,23 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
   <div key={idx} className="bg-black/40 border border-white/10 p-5 rounded-xl relative overflow-hidden group hover:border-[#d4af37]/40 transition-all">
     <div className="flex justify-between items-start mb-3">
       <span className="bg-[#d4af37]/10 text-[#d4af37] px-2 py-0.5 rounded text-[10px] font-black tracking-wider">{cita.horario}</span>
-      {/* AQUÍ ESTÁ EL PRECIO */}
+      
+      {/* AQUÍ AÑADIMOS EL MÉTODO DE PAGO */}
+      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
+        cita.metodo_pago === 'efectivo' ? 'bg-green-500/20 text-green-400' : 
+        cita.metodo_pago === 'tarjeta' ? 'bg-blue-500/20 text-blue-400' : 
+        'bg-white/10 text-white/50'
+      }`}>
+        {cita.metodo_pago || 'Pendiente'}
+      </span>
+    </div>
+    
+    <div className="flex justify-between items-end">
+      <h4 className="font-bold text-sm uppercase text-white">{cita.servicio}</h4>
       <span className="text-[#d4af37] font-black text-sm">
         {SERVICIOS.find(s => s.nombre === cita.servicio)?.precio || "$0"}
       </span>
     </div>
-    <h4 className="font-bold text-sm uppercase text-white">{cita.servicio}</h4>
   </div>
 ))
                     )}
@@ -593,93 +644,75 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
      // ==========================================
 // VISTA 3: PANEL EXCLUSIVO DE BARBEROS
 // ==========================================
-if (barberoLogueado) {
-  // Filtramos la agenda para mostrarle ÚNICAMENTE sus citas y sus Walk-In del día
-  const misCitasDelDia = citasDelDia.filter(
-    cita => cita.barbero === barberoLogueado && BARBEROS.includes(cita.barbero)
-  );
+// ==========================================
+  // VISTA 3: PANEL EXCLUSIVO DE BARBEROS
+  // ==========================================
+  if (barberoLogueado) {
+    const misCitasDelDia = citasDelDia.filter(cita => cita.barbero === barberoLogueado && BARBEROS.includes(cita.barbero));
+    const serviciosCompletados = misCitasDelDia.filter(c => c.metodo_pago && c.metodo_pago.toLowerCase().trim() !== 'pendiente').length;
 
-  const serviciosCompletados = misCitasDelDia.filter(c => c.metodo_pago && c.metodo_pago !== 'PENDIENTE').length;
-
-  return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 font-sans">
-      {/* HEADER DEL BARBERO */}
-      <nav className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
-        <div>
-          <p className="text-[10px] text-[#d4af37] tracking-widest uppercase">Especialista Activo</p>
-          <h1 className="text-xl font-black uppercase tracking-tight">💈 {barberoLogueado}</h1>
-        </div>
-        <button 
-          onClick={() => setBarberoLogueado(null)} 
-          className="text-[10px] uppercase font-bold text-white/40 border border-white/10 px-3 py-1.5 rounded-lg hover:text-white"
-        >
-          Salir
-        </button>
-      </nav>
-
-      {/* METRICAS SENCILLAS (SIN DINERO, SOLO VOLUMEN) */}
-      <div className="bg-[#121212] border border-white/5 rounded-2xl p-4 mb-6 flex justify-between items-center">
-        <div>
-          <p className="text-xs text-white/50 uppercase">Servicios Hoy</p>
-          <p className="text-2xl font-black text-[#d4af37]">{misCitasDelDia.length}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-xs text-white/50 uppercase">Completados</p>
-          <p className="text-2xl font-black text-green-400">{serviciosCompletados}</p>
-        </div>
-      </div>
-
-      {/* LISTA DE CITAS DEL BARBERO */}
-      <h2 className="text-xs font-black uppercase tracking-wider text-white/40 mb-3">Mi Agenda del Día</h2>
-      
-      <div className="space-y-3">
-        {misCitasDelDia.length > 0 ? (
-          misCitasDelDia.map((cita, index) => {
-            const esPendiente = !cita.metodo_pago || cita.metodo_pago === 'PENDIENTE';
-            
-            return (
-              <div 
-                key={index} 
-                className={`p-4 rounded-xl border transition-all ${
-                  esPendiente ? 'bg-[#161616] border-[#d4af37]/30' : 'bg-[#121212]/40 border-white/5 opacity-60'
-                }`}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-sm font-black text-[#d4af37] bg-[#d4af37]/10 px-2 py-0.5 rounded-md">
-                    {cita.horario}
-                  </span>
-                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-md ${
-                    esPendiente ? 'bg-amber-500/10 text-amber-400' : 'bg-green-500/10 text-green-400'
-                  }`}>
-                    {esPendiente ? 'En Espera' : '✓ Terminado'}
-                  </span>
-                </div>
-
-                <p className="font-bold text-white uppercase text-sm">{cita.cliente || "Cliente Mostrador"}</p>
-                <p className="text-xs text-white/60 mt-0.5">{cita.servicio}</p>
-
-                {/* BOTÓN PARA FINALIZAR QUE ELLOS PUEDEN TOCAR */}
-                {esPendiente && (
-                  <button
-                    onClick={() => finalizarCita(cita)} // Reutiliza tu función para liberar el horario
-                    className="w-full mt-3 bg-[#d4af37] text-black text-xs font-black py-2 rounded-lg uppercase tracking-wider active:scale-95 transition-transform"
-                  >
-                    Marcar como Listo
-                  </button>
-                )}
-              </div>
-            );
-          })
-        ) : (
-          <div className="text-center py-10 text-white/30 text-xs italic">
-            No tienes servicios asignados para hoy todavía.
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] text-white p-4 font-sans">
+        <nav className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+          <div>
+            <p className="text-[10px] text-[#d4af37] tracking-widest uppercase">Especialista Activo</p>
+            <h1 className="text-xl font-black uppercase tracking-tight">💈 {barberoLogueado}</h1>
           </div>
-        )}
-      </div>
-    </div>
-  );
-}
+          <button onClick={() => setBarberoLogueado(null)} className="text-[10px] uppercase font-bold text-white/40 border border-white/10 px-3 py-1.5 rounded-lg hover:text-white">
+            Salir
+          </button>
+        </nav>
 
+        <div className="bg-[#121212] border border-white/5 rounded-2xl p-4 mb-6 flex justify-between items-center">
+          <div>
+            <p className="text-xs text-white/50 uppercase">Servicios Hoy</p>
+            <p className="text-2xl font-black text-[#d4af37]">{misCitasDelDia.length}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-white/50 uppercase">Completados</p>
+            <p className="text-2xl font-black text-green-400">{serviciosCompletados}</p>
+          </div>
+        </div>
+
+        <h2 className="text-xs font-black uppercase tracking-wider text-white/40 mb-3">Mi Agenda del Día</h2>
+        <div className="space-y-3">
+          {misCitasDelDia.length > 0 ? (
+            misCitasDelDia.map((cita, index) => {
+              const esPendiente = !cita.metodo_pago || cita.metodo_pago.toLowerCase().trim() === 'pendiente';
+              return (
+                <div key={index} className={`p-4 rounded-xl border transition-all ${esPendiente ? 'bg-[#161616] border-[#d4af37]/30' : 'bg-[#121212]/40 border-white/5 opacity-60'}`}>
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-sm font-black text-[#d4af37] bg-[#d4af37]/10 px-2 py-0.5 rounded-md">{cita.horario}</span>
+                    <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-md ${esPendiente ? 'bg-amber-500/10 text-amber-400' : 'bg-green-500/10 text-green-400'}`}>
+                      {esPendiente ? 'En Espera' : `✓ ${cita.metodo_pago.toUpperCase()}`}
+                    </span>
+                  </div>
+                  <p className="font-bold text-white uppercase text-sm">{cita.cliente_nombre || "Cliente Online"}</p>
+                  <p className="text-xs text-white/60 mt-0.5">{cita.servicio}</p>
+
+                  {esPendiente && (
+                    citaEnPago?.id === cita.id ? (
+                      <div className="grid grid-cols-2 gap-2 mt-3">
+                        <button type="button" onClick={() => confirmarPagoCita(cita, 'efectivo')} className="bg-green-600 text-white text-[10px] font-black py-2 rounded-lg uppercase">Efectivo</button>
+                        <button type="button" onClick={() => confirmarPagoCita(cita, 'tarjeta')} className="bg-blue-600 text-white text-[10px] font-black py-2 rounded-lg uppercase">Tarjeta</button>
+                        <button type="button" onClick={() => setCitaEnPago(null)} className="col-span-2 text-white/30 text-[9px] uppercase underline mt-1">Cancelar</button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setCitaEnPago(cita)} className="w-full mt-3 bg-[#d4af37] text-black text-xs font-black py-2 rounded-lg uppercase tracking-wider active:scale-95 transition-transform">
+                        Marcar como Listo
+                      </button>
+                    )
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            <div className="text-center py-10 text-white/30 text-xs italic">No tienes servicios asignados para hoy todavía.</div>
+          )}
+        </div>
+      </div>
+    );
+  }
   // ==========================================
   // VISTA 1: SITIO WEB (VISTA CLIENTE)
   // ==========================================
