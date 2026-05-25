@@ -372,28 +372,41 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
     html2pdf().set(opciones).from(elemento).save();
   };
   const finalizarCita = async () => {
-    if (!reserva.servicio || !reserva.horario || !reserva.barbero) return;
+    // 1. Validamos datos
+    if (!reserva.servicio || !reserva.horario || !reserva.barbero) {
+      alert("Por favor completa todos los campos antes de confirmar.");
+      return;
+    }
+    
+    // 2. Preparamos datos
     const fechaFinal = fechaSeleccionada.toISOString().split('T')[0];
     const opcionesFecha = { weekday: 'long', day: 'numeric', month: 'long' };
-    
     let fechaLegible = fechaSeleccionada.toLocaleDateString('es-MX', opcionesFecha);
     fechaLegible = fechaLegible.normalize("NFD").replace(/[\u0300-\u0301]/g, "");
 
+    // 3. Guardamos en Supabase
     const { error } = await supabase.from('citas').insert([
-      { servicio: reserva.servicio.nombre, horario: reserva.horario, fecha: fechaFinal, barbero: reserva.barbero }
+      { 
+        servicio: reserva.servicio.nombre, 
+        horario: reserva.horario, 
+        fecha: fechaFinal, 
+        barbero: reserva.barbero,
+        metodo_pago: 'PENDIENTE' // Aseguramos que inicie como pendiente
+      }
     ]);
-    
+
     if (error) {
       console.error("Error Supabase:", error);
-      alert("Error al guardar, intenta de nuevo.");
+      alert("Error al conectar con el sistema. Intenta de nuevo.");
       return;
     }
 
+    // 4. Formateamos el mensaje de WhatsApp
     const numeroTelefono = "523310942397";
     const textoTicket = 
 `BARBERIA VINTAGE STUDIO
 --------------------------------------
-¡Hola! Me gustaria confirmar mi cita agendada desde el sitio web. Aquí estan los detalles de mi turno:
+¡Hola! Me gustaría confirmar mi cita agendada desde el sitio web.
 
 🔹 SERVICIO: ${reserva.servicio.nombre}
 🔹 BARBERO: ${reserva.barbero}
@@ -401,12 +414,16 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
 🔹 HORARIO: ${reserva.horario}
 
 --------------------------------------
-✨ Agradecemos su puntualidad. ¡Nos vemos pronto!`;
+✨ Agradecemos su puntualidad.
+¡Nos vemos pronto!`;
 
-    const urlWhatsapp = `https://api.whatsapp.com/send?phone=${numeroTelefono}&text=${encodeURIComponent(textoTicket)}`;
-    window.open(urlWhatsapp, '_blank');
+    // 5. APERTURA SEGURA: Usamos window.location.href en lugar de window.open
+    // Esto es mucho más compatible con navegadores móviles (Chrome/Safari en iOS/Android)
+    const urlWhatsapp = `https://wa.me/${numeroTelefono}?text=${encodeURIComponent(textoTicket)}`;
+    
+    // Cambiamos el comportamiento:
+    window.location.href = urlWhatsapp; 
   };
-
   // ==========================================
   // VISTA 2: PRISMA DASHBOARD (PANTALLA DE ADMIN)
   // ==========================================
