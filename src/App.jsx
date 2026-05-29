@@ -55,14 +55,15 @@ const [menuPagoAbierto, setMenuPagoAbierto] = useState(false);
   }, []);
 
   // DETECTOR DE URL SECRETA
+ // DETECTOR DE URL SECRETA
   useEffect(() => {
     const verificarRutaSecreta = () => {
-      if (window.location.hash === '#admin') {
-        setModoAdmin(true);
+      // Si la URL termina en #admin o #login, mantenemos el modoAdmin activo
+      if (window.location.hash === '#admin' || window.location.hash === '#login') {
+        setModoAdmin(true); 
       } else {
+        // Solo quitamos el modoAdmin si realmente nos vamos a otro lado
         setModoAdmin(false);
-        setPinCorrecto(false);
-        setPinIngresado("");
       }
     };
     window.addEventListener('hashchange', verificarRutaSecreta);
@@ -508,7 +509,7 @@ Agradecemos su puntualidad. ¡Nos vemos pronto!`;
       return (
         <div className="bg-[#121212] min-h-screen flex items-center justify-center font-sans p-4">
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#1a1a1a] border border-white/10 p-8 rounded-2xl w-full max-w-sm text-center shadow-2xl">
-            <div className="text-xl font-black text-white mb-2">PRISMA<span className="text-[#d4af37]">DASHBOARD</span></div>
+            <div className="text-xl font-black text-white mb-2">Vintage Studio<span className="text-[#d4af37]">DASHBOARD</span></div>
             <p className="text-[9px] uppercase tracking-widest text-[#d4af37] mb-8">Acceso exclusivo para empleados</p>
             <form onSubmit={manejarLoginAdmin} className="space-y-4">
               <input 
@@ -526,154 +527,232 @@ Agradecemos su puntualidad. ¡Nos vemos pronto!`;
     }
  
 
+    // CÁLCULOS PARA TARJETAS KPI
+    const citasPagadas = citasDelDia.filter(c => c.metodo_pago && (c.metodo_pago.toLowerCase().trim() === 'efectivo' || c.metodo_pago.toLowerCase().trim() === 'tarjeta'));
+    const citasPendientes = citasDelDia.filter(c => !c.metodo_pago || (c.metodo_pago.toLowerCase().trim() !== 'efectivo' && c.metodo_pago.toLowerCase().trim() !== 'tarjeta'));
+    
     return (
-      <div className="bg-[#121212] text-[#f5f5f5] min-h-screen font-sans p-6">
-        <nav className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-10 border-b border-white/10 pb-6">
+      <div className="bg-[#0f0f0f] text-white min-h-screen font-sans p-4 md:p-10 selection:bg-[#d4af37] selection:text-black antialiased">
+        
+       {/* BARRA DE NAVEGACIÓN SUPERIOR */}
+        <nav className="flex justify-between items-center mb-12 border-b border-white/[0.02] pb-6">
           <div>
-            <div className="text-2xl font-black tracking-tighter text-white">PRISMA<span className="text-[#d4af37]">DASHBOARD</span></div>
-            <p className="text-[10px] text-[#d4af37] tracking-[0.2em] uppercase mt-1">Ecosistema Multi-Barbero</p>
+            <div className="text-2xl font-black tracking-wide text-white">
+              PRISMA<span className="text-[#d4af37] font-light">DASHBOARD</span>
+            </div>
+            <p className="text-[9px] text-[#d4af37] tracking-[0.25em] uppercase mt-1 font-bold opacity-90">Ecosistema Multi-Barbero</p>
           </div>
           <button 
-            onClick={() => { window.location.hash = ""; }} 
-            className="text-xs uppercase font-bold text-white/50 hover:text-white border border-white/20 px-4 py-2 rounded-lg w-full sm:w-auto text-center"
-          >
-            Cerrar Sesión
-          </button>
+  onClick={() => { 
+    setPinCorrecto(false);   // Bloquea el panel
+    setPinIngresado("");     // Limpia el NIP
+    setErrorPin(false);      // Quita errores previos
+    window.location.hash = "#login"; // Mueve la URL a la pantalla del NIP
+  }} 
+  className="text-[11px] tracking-widest uppercase font-black text-neutral-300 hover:text-white border border-neutral-800 hover:border-neutral-700 px-5 py-2.5 rounded-xl transition-all bg-transparent"
+>
+  Cerrar Sesión
+</button>
         </nav>
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 gap-4">
+
+        {/* CONTENEDOR PANORÁMICO FLUÍDO */}
+        <div className="w-full mx-auto space-y-8">
+          
+          {/* SECCIÓN DE CABECERA Y ACCIONES ALINEADAS (PC) */}
+          <div className="flex flex-col lg:flex-row lg:justify-between lg:items-end gap-6 pb-2">
             <div>
-              <h2 className="text-3xl font-black uppercase tracking-tighter">Panel de Agendas</h2>
-              <p className="text-xs text-white/40 uppercase tracking-wider mt-1">Fecha seleccionada: {fechaSeleccionada.toISOString().split('T')[0]}</p>
+              <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tight text-white">PANEL DE AGENDAS</h1>
+              <p className="text-[11px] text-neutral-500 uppercase tracking-wider mt-1 font-bold">
+                FECHA SELECCIONADA: <span className="font-mono text-neutral-400 font-black">2026-05-28</span>
+              </p>
             </div>
             
-            <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto items-center">
-              {/* BOTÓN 1: VENTA MOSTRADOR */}
+            {/* GRUPO DE ACCIONES CON FONDO EN ESCUADRA (COMPACTAS) */}
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 lg:self-end">
+              {/* Botón Venta Mostrador */}
               <button 
                 onClick={() => setMostrarModalWalkIn(true)} 
-                className="bg-[#d4af37] text-black px-6 h-12 rounded-xl font-black uppercase text-xs w-full sm:w-48 flex items-center justify-center shadow-lg transition-all hover:bg-[#b8922f]"
+                className="bg-[#d4af37] text-black py-3 px-5 rounded-xl font-black uppercase text-xs tracking-wider flex items-center justify-center gap-1.5 transition-all hover:bg-white active:scale-98 shadow-md"
               >
-                ➕ Venta Mostrador
+                <span className="text-sm font-light">+</span> VENTA MOSTRADOR
               </button>
               
-              {/* BOTÓN 2: DESCARGAR PDF */}
+              {/* Botón Descargar PDF - CON FONDO GRIS ASIGNADO */}
               <button 
                 onClick={descargarCorteCaja} 
-                className="bg-[#d4af37]/10 border border-[#d4af37]/30 hover:bg-[#d4af37] hover:text-black text-[#d4af37] px-6 h-12 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center shadow-lg shadow-[#d4af37]/5 w-full sm:w-48"
+                className="bg-[#161616] border border-neutral-800 hover:border-neutral-700 text-[#d4af37] py-3 px-5 rounded-xl font-black uppercase text-xs tracking-wider flex items-center justify-center gap-2 transition-all hover:bg-neutral-900 active:scale-98 shadow-sm"
               >
-                📥 Descargar PDF
+                <span>📥</span> DESCARGAR PDF
               </button>
 
-              {mostrarModalWalkIn && (
-                <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
-                  <form onSubmit={registrarWalkIn} className="bg-[#121212] border border-[#d4af37] p-6 rounded-2xl w-full max-w-sm">
-                    <h2 className="text-white font-black uppercase mb-4 text-sm">Nueva Venta Mostrador</h2>
-                    
-                    {/* Nombre Cliente */}
-                    <input placeholder="Nombre Cliente" onChange={(e) => setFormWalkIn({...formWalkIn, cliente: e.target.value})} className="w-full bg-[#1a1a1a] border border-white/20 p-2.5 rounded-xl mb-3 text-white text-sm placeholder:text-white/30" />
-                    
-                    {/* Menú Barbero */}
-                    <div className="relative mb-3">
-                      <div onClick={() => setMenuBarberoAbierto(!menuBarberoAbierto)} className="w-full bg-[#1a1a1a] border border-white/20 p-2.5 rounded-xl text-white text-sm cursor-pointer flex justify-between items-center">
-                        {formWalkIn.barbero} <span className="text-[10px]">▼</span>
-                      </div>
-                      {menuBarberoAbierto && (
-                        <div className="absolute w-full bg-[#1a1a1a] border border-[#d4af37] rounded-xl mt-1 z-50 shadow-xl overflow-hidden text-sm">
-                          {BARBEROS.map(b => (
-                            <div key={b} onClick={() => { setFormWalkIn({...formWalkIn, barbero: b}); setMenuBarberoAbierto(false); }} className="p-3 hover:bg-[#d4af37] hover:text-black cursor-pointer text-white">{b}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Menú Servicios */}
-                    <div className="relative mb-3">
-                      <div onClick={() => setMenuServicioAbierto(!menuServicioAbierto)} className="w-full bg-[#1a1a1a] border border-white/20 p-2.5 rounded-xl text-white text-sm cursor-pointer flex justify-between items-center">
-                        {formWalkIn.servicio} <span className="text-[10px]">▼</span>
-                      </div>
-                      {menuServicioAbierto && (
-                        <div className="absolute w-full bg-[#1a1a1a] border border-[#d4af37] rounded-xl mt-1 z-50 shadow-xl overflow-hidden text-sm">
-                          {SERVICIOS.map(s => (
-                            <div key={s.id} onClick={() => { setFormWalkIn({...formWalkIn, servicio: s.nombre}); setMenuServicioAbierto(false); }} className="p-3 hover:bg-[#d4af37] hover:text-black cursor-pointer text-white">{s.nombre}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Menú Pago */}
-                    <div className="relative mb-3">
-                      <div onClick={() => setMenuPagoAbierto(!menuPagoAbierto)} className="w-full bg-[#1a1a1a] border border-white/20 p-2.5 rounded-xl text-white text-sm cursor-pointer flex justify-between items-center">
-                        {formWalkIn.metodoPago.charAt(0).toUpperCase() + formWalkIn.metodoPago.slice(1)} <span className="text-[10px]">▼</span>
-                      </div>
-                      {menuPagoAbierto && (
-                        <div className="absolute w-full bg-[#1a1a1a] border border-[#d4af37] rounded-xl mt-1 z-50 shadow-xl overflow-hidden text-sm">
-                          {['Efectivo', 'Tarjeta'].map(p => (
-                            <div key={p} onClick={() => { setFormWalkIn({...formWalkIn, metodoPago: p.toLowerCase()}); setMenuPagoAbierto(false); }} className="p-3 hover:bg-[#d4af37] hover:text-black cursor-pointer text-white">{p}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <button type="submit" className="w-full bg-[#d4af37] py-3 rounded-xl font-black text-black text-sm mt-2">REGISTRAR</button>
-                    <button type="button" onClick={() => setMostrarModalWalkIn(false)} className="w-full mt-3 text-white/30 text-[10px] uppercase">Cancelar</button>
-                  </form>
-                </div>
-              )}
-
-              <div className="bg-white/5 px-6 py-3 rounded-xl border border-white/10 text-center min-w-[150px]">
-                <span className="block text-[10px] text-white/40 uppercase tracking-widest">Caja Estimada Hoy</span>
-                <span className="text-xl text-[#d4af37] font-black">${calcularIngresosDelDia()} MXN</span>
+              {/* Métrica De Caja Integrada - CON FONDO GRIS ASIGNADO */}
+              <div className="bg-[#161616] border border-neutral-800 px-5 py-2 rounded-xl flex flex-col items-center justify-center min-w-[160px] shadow-sm">
+                <span className="block text-[8px] text-neutral-400 uppercase tracking-widest font-black mb-0.5">CAJA ESTIMADA HOY</span>
+                <span className="text-lg text-[#d4af37] font-black font-mono">${calcularIngresosDelDia()} MXN</span>
               </div>
             </div>
           </div>
+
+          {/* METRICAS SECUNDARIAS COMPACTAS - CON FONDO GRIS ASIGNADO (FIEL A IMAGE_1D69FF.PNG) */}
+          <div className="flex flex-col sm:flex-row gap-3 max-w-2xl">
+            <div className="bg-[#161616] border border-neutral-800 px-4 py-3 rounded-xl flex justify-between items-center flex-1 shadow-sm">
+              <span className="text-[10px] text-white uppercase tracking-wider font-black flex items-center gap-1.5">
+                <span className="text-emerald-500">✓</span> SERVICIOS LISTOS
+              </span>
+              <span className="text-xs bg-[#0f0f0f] border border-neutral-800 px-2 py-0.5 rounded text-white font-black font-mono">{citasPagadas.length}</span>
+            </div>
+            
+            <div className="bg-[#161616] border border-neutral-800 px-4 py-3 rounded-xl flex justify-between items-center flex-1 shadow-sm">
+              <span className="text-[10px] text-white uppercase tracking-wider font-black flex items-center gap-1.5">
+                <span className="text-[#d4af37]">⏳</span> POR COBRAR
+              </span>
+              <span className="text-xs bg-[#0f0f0f] border border-neutral-800 px-2 py-0.5 rounded text-white font-black font-mono">{citasPendientes.length}</span>
+            </div>
+          </div>
          
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* REJILLA DE SILLAS DE BARBEROS - CON FONDO GRIS ASIGNADO */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {BARBEROS.map((barbero) => {
-              const citasDelBarbero = citasDelDia.filter(c => c.barbero === barbero);
+              const esperaDelBarbero = citasDelDia.filter(c => c.barbero === barbero && (!c.metodo_pago || (c.metodo_pago.toLowerCase().trim() !== 'efectivo' && c.metodo_pago.toLowerCase().trim() !== 'tarjeta')));
+              
               return (
-                <div key={barbero} className="bg-white/5 border border-white/5 rounded-2xl p-4 flex flex-col min-h-[500px]">
-                  <div className="flex justify-between items-center border-b border-white/10 pb-3 mb-4">
-                    <h3 className="text-lg font-black uppercase tracking-wide text-white flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-[#d4af37]"></span> Sillas de {barbero}
+                <div key={barbero} className="bg-[#161616] border border-neutral-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl transition-all hover:border-neutral-700">
+                  {/* Cabecera de la Silla */}
+                  <div className="border-b border-white/[0.03] pb-3 mb-4 flex justify-between items-center">
+                    <h3 className="text-xs font-black uppercase text-white tracking-wider flex items-center">
+                      <span className="inline-block w-2 h-2 rounded-full bg-[#d4af37] mr-2"></span>
+                      SILLAS DE {barbero}
                     </h3>
-                    <span className="bg-white/10 text-white/70 px-2.5 py-0.5 rounded-full text-[10px] font-bold">{citasDelBarbero.length} citas</span>
+                    <span className="text-[9px] bg-[#0f0f0f] border border-neutral-800 text-neutral-400 px-2.5 py-0.5 rounded-full font-bold font-mono">
+                      {esperaDelBarbero.length} citas
+                    </span>
                   </div>
-                  <div className="space-y-3 flex-1 overflow-y-auto">
-                    {citasDelBarbero.length === 0 ? (
-                      <div className="h-full flex items-center justify-center border border-dashed border-white/5 rounded-xl py-12">
-                        <p className="text-[10px] text-white/20 uppercase tracking-widest">Sin citas asignadas</p>
+
+                  {/* Turnos / Estado de Silla */}
+                  <div className="space-y-2 min-h-[160px] flex flex-col justify-center">
+                    {esperaDelBarbero.length === 0 ? (
+                      <div className="text-center py-10 border border-dashed border-neutral-800/80 rounded-xl bg-[#0f0f0f]/40">
+                        <p className="text-[10px] text-neutral-500 uppercase tracking-widest font-black">SIN CITAS ASIGNADAS</p>
                       </div>
                     ) : (
-                      citasDelBarbero.map((cita, idx) => (
-  <div key={idx} className="bg-black/40 border border-white/10 p-5 rounded-xl relative overflow-hidden group hover:border-[#d4af37]/40 transition-all">
-    <div className="flex justify-between items-start mb-3">
-      <span className="bg-[#d4af37]/10 text-[#d4af37] px-2 py-0.5 rounded text-[10px] font-black tracking-wider">{cita.horario}</span>
-      
-      {/* AQUÍ AÑADIMOS EL MÉTODO DE PAGO */}
-      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
-        cita.metodo_pago === 'efectivo' ? 'bg-green-500/20 text-green-400' : 
-        cita.metodo_pago === 'tarjeta' ? 'bg-blue-500/20 text-blue-400' : 
-        'bg-white/10 text-white/50'
-      }`}>
-        {cita.metodo_pago || 'Pendiente'}
-      </span>
-    </div>
-    
-    <div className="flex justify-between items-end">
-      <h4 className="font-bold text-sm uppercase text-white">{cita.servicio}</h4>
-      <span className="text-[#d4af37] font-black text-sm">
-        {SERVICIOS.find(s => s.nombre === cita.servicio)?.precio || "$0"}
-      </span>
-    </div>
-  </div>
-))
+                      esperaDelBarbero.map((cita, idx) => (
+                        <div key={idx} className="bg-[#0f0f0f] p-3 rounded-xl border border-neutral-800 hover:border-neutral-700 transition-colors">
+                          <span className="text-[#d4af37] font-mono text-[9px] font-black block mb-1">• {cita.horario}</span>
+                          <p className="text-xs font-black text-white uppercase tracking-tight">{cita.cliente_nombre || 'Cliente Online'}</p>
+                          <p className="text-[10px] text-white/70 uppercase truncate mt-0.5">{cita.servicio}</p>
+                        </div>
+                      ))
                     )}
                   </div>
                 </div>
               );
             })}
           </div>
+
+          {/* HISTORIAL DE VENTAS - CON FONDO GRIS ASIGNADO */}
+          <div className="pt-4">
+            <p className="text-xs text-white uppercase tracking-[0.15em] font-black mb-4">💰 HISTORIAL DE VENTAS LIQUIDADAS</p>
+            <div className="bg-[#161616] border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/[0.04] bg-[#0f0f0f]/60 text-[9px] text-white uppercase font-black tracking-widest">
+                      <th className="p-4 pl-6">Horario</th>
+                      <th className="p-4">Barbero</th>
+                      <th className="p-4">Servicio</th>
+                      <th className="p-4">Método Pago</th>
+                      <th className="p-4 pr-6 text-right">Monto</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.02] text-xs uppercase font-black text-white">
+                    {citasPagadas.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="p-8 text-center text-white/40 text-[9px] font-black tracking-widest">
+                          AÚN NO HAY VENTAS LIQUIDADAS HOY.
+                        </td>
+                      </tr>
+                    ) : (
+                      citasPagadas.map((cita, idx) => {
+                        const precioEncontrado = SERVICIOS.find(s => s.nombre.toLowerCase().trim() === (cita.servicio ? cita.servicio.toLowerCase().trim() : ""))?.precio || "$350";
+                        return (
+                          <tr key={idx} className="hover:bg-[#0f0f0f]/50 transition-colors">
+                            <td className="p-4 pl-6 font-mono text-[#d4af37]">{cita.horario}</td>
+                            <td className="p-4 text-white">{cita.barbero}</td>
+                            <td className="p-4 text-white/80">{cita.servicio}</td>
+                            <td className="p-4">
+                              <span className="text-[9px] font-black tracking-wider text-[#d4af37]">
+                                {cita.metodo_pago.toLowerCase().trim() === 'efectivo' ? '✓ EFECTIVO' : '✓ TARJETA'}
+                              </span>
+                            </td>
+                            <td className="p-4 pr-6 text-right font-mono text-white">${precioEncontrado.replace('$', '')}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
         </div>
+
+        {/* MODAL MANTIENE SU DISEÑO ELEVADO */}
+        {mostrarModalWalkIn && (
+          <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div className="bg-[#161616] border border-neutral-800 p-6 rounded-2xl w-full max-w-sm shadow-2xl">
+              <div className="text-center mb-6">
+                <h3 className="text-white font-black uppercase tracking-widest text-xs">Nueva Venta Mostrador</h3>
+                <div className="h-[1px] w-12 bg-[#d4af37]/40 mx-auto mt-2"></div>
+              </div>
+              <form onSubmit={registrarWalkIn} className="space-y-4">
+                <div>
+                  <label className="block text-[9px] text-white uppercase font-black tracking-wider mb-1.5">Nombre del Cliente</label>
+                  <input type="text" placeholder="Ej. Cliente Walk-In" onChange={(e) => setFormWalkIn({...formWalkIn, cliente: e.target.value})} className="w-full bg-[#0f0f0f] border border-neutral-800 focus:border-[#d4af37] p-3 rounded-xl text-white text-xs font-bold focus:outline-none transition-all" />
+                </div>
+                <div className="relative">
+                  <label className="block text-[9px] text-white uppercase font-black tracking-wider mb-1.5">Seleccionar Barbero</label>
+                  <div onClick={() => setMenuBarberoAbierto(!menuBarberoAbierto)} className="w-full bg-[#0f0f0f] border border-neutral-800 p-3 rounded-xl text-white text-xs font-bold cursor-pointer flex justify-between items-center transition-all">
+                    <span className="uppercase">{formWalkIn.barbero}</span><span className="text-[9px] text-[#d4af37]">{menuBarberoAbierto ? '▲' : '▼'}</span>
+                  </div>
+                  {menuBarberoAbierto && (
+                    <div className="absolute w-full bg-[#161616] border border-neutral-800 rounded-xl mt-1 z-50 max-h-40 overflow-y-auto">
+                      {BARBEROS.map(b => <div key={b} onClick={() => { setFormWalkIn({...formWalkIn, barbero: b}); setMenuBarberoAbierto(false); }} className="p-3 hover:bg-[#d4af37] hover:text-black cursor-pointer text-xs uppercase font-black transition-all">{b}</div>)}
+                    </div>
+                  )}
+                </div>
+                <div className="relative">
+                  <label className="block text-[9px] text-white uppercase font-black tracking-wider mb-1.5">Servicio Solicitado</label>
+                  <div onClick={() => setMenuServicioAbierto(!menuServicioAbierto)} className="w-full bg-[#0f0f0f] border border-neutral-800 p-3 rounded-xl text-white text-xs font-bold cursor-pointer flex justify-between items-center transition-all">
+                    <span className="uppercase text-white/90">{formWalkIn.servicio}</span><span className="text-[9px] text-[#d4af37]">{menuServicioAbierto ? '▲' : '▼'}</span>
+                  </div>
+                  {menuServicioAbierto && (
+                    <div className="absolute w-full bg-[#161616] border border-neutral-800 rounded-xl mt-1 z-50 max-h-40 overflow-y-auto">
+                      {SERVICIOS.map(s => <div key={s.id} onClick={() => { setFormWalkIn({...formWalkIn, servicio: s.nombre}); setMenuServicioAbierto(false); }} className="p-3 hover:bg-[#d4af37] hover:text-black cursor-pointer text-xs font-black flex justify-between uppercase transition-all"><span>{s.nombre}</span><span>{s.precio}</span></div>)}
+                    </div>
+                  )}
+                </div>
+                <div className="relative">
+                  <label className="block text-[9px] text-white uppercase font-black tracking-wider mb-1.5">Método de Liquidación</label>
+                  <div onClick={() => setMenuPagoAbierto(!menuPagoAbierto)} className="w-full bg-[#0f0f0f] border border-neutral-800 p-3 rounded-xl text-white text-xs font-bold cursor-pointer flex justify-between items-center transition-all">
+                    <span className="font-black text-[#d4af37] uppercase text-xs">{formWalkIn.metodoPago === 'efectivo' ? '💵 Efectivo' : '💳 Tarjeta'}</span>
+                    <span className="text-[9px] text-[#d4af37]">{menuPagoAbierto ? '▲' : '▼'}</span>
+                  </div>
+                  {menuPagoAbierto && (
+                    <div className="absolute w-full bg-[#161616] border border-neutral-800 rounded-xl mt-1 z-50">
+                      {['Efectivo', 'Tarjeta'].map(p => <div key={p} onClick={() => { setFormWalkIn({...formWalkIn, metodoPago: p.toLowerCase()}); setMenuPagoAbierto(false); }} className="p-3 hover:bg-[#d4af37] hover:text-black cursor-pointer text-xs font-black uppercase transition-all">{p === 'Efectivo' ? '💵 Efectivo' : '💳 Tarjeta'}</div>)}
+                    </div>
+                  )}
+                </div>
+                <div className="pt-4 space-y-2">
+                  <button type="submit" className="w-full bg-[#d4af37] py-3 rounded-xl font-black text-black text-xs uppercase tracking-widest hover:bg-white">Completar Venta</button>
+                  <button type="button" onClick={() => setMostrarModalWalkIn(false)} className="w-full text-center text-white/60 text-[10px] uppercase font-black tracking-widest pt-2 hover:text-white">Cerrar Ventana</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
       </div>
     );
   }
